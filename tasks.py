@@ -1,4 +1,5 @@
 """Luigi tasks."""
+import os
 import json
 import csv
 from abc import ABC
@@ -13,10 +14,9 @@ class ResourceTask(luigi.Task):
 
     fname = luigi.Parameter()
 
-    def requires(self):
-        # This task requires that the file exist locally; could be elsewhere,
-        # like AWS s3 (luigi.contrib.aws.S3Target) or
-        # GCS (luigi.contrib.gcs.GCSTarget)
+    def output(self):
+        # This task outpus a local file, but it could be elsewhere, like
+        # AWS s3 (luigi.contrib.aws.S3Target) or GCS (luigi.contrib.gcs.GCSTarget)
         return luigi.LocalTarget(self.fname)
 
 
@@ -33,6 +33,7 @@ class ParseJSONTask(AbstractParseTask):
         with self.input().open() as f:
             data = json.load(f)
         header = list(data[0].keys())
+        header.insert(0, "id")
         parsed_data = [[i, *obj.values()] for i, obj in enumerate(data)]
         with self.output().open(mode="w") as f:
             writer = csv.writer(f)
@@ -41,7 +42,7 @@ class ParseJSONTask(AbstractParseTask):
 
     def output(self):
         # This task writes its output to a local file
-        return luigi.LocalTarget()
+        return luigi.LocalTarget(self.task_id + ".csv")
 
 
 class ParseCSVTask(AbstractParseTask):
@@ -52,13 +53,14 @@ class ParseCSVTask(AbstractParseTask):
         with self.input().open() as f:
             reader = csv.reader(f)
             parsed_data = [[i, *row] for i, row in enumerate(reader)]
+            parsed_data[0][0] = "id"
         with self.output().open(mode="w") as f:
             writer = csv.writer(f)
             writer.writerows(parsed_data)
 
     def output(self):
         # This task writes its output to a local file
-        return luigi.LocalTarget()
+        return luigi.LocalTarget(self.task_id + ".csv")
 
 
 @inherits(AbstractParseTask)
@@ -67,14 +69,20 @@ class ParseTask(luigi.Task):
 
     def run(self):
         # Naively check file type
-        ext = self.input().path.split(".")[-1]
+        ext = self.fname.split(".")[-1]
         params = common_params(self, AbstractParseTask)
         if ext == "csv":
-            yield ParseCSVTask(**params)
+            local_target = yield ParseCSVTask(**params)
         elif ext == "json":
-            yield ParseJSONTask(**params)
+            local_target = yield ParseJSONTask(**params)
         else:
             raise Exception("Not sure how to handle that file type...")
+        with local_target.open() as inf, self.output().open("w") as outf:
+            outf.write(inf.read())
+
+    def output(self):
+        # This task writes its output to a local file
+        return luigi.LocalTarget(self.task_id + ".csv")
 
 
 @requires(ParseTask)
@@ -87,23 +95,42 @@ class TransformTask(luigi.Task):
             data = list(reader)
 
         # Do some awesome transforms...
+        data[0].insert(1, "full_name")
+        for row in data[1:]:
+            full_name = " ".join(row[1:3])
+            row.insert(1, full_name)
 
         with self.output().open(mode="w") as f:
-            writer = csv.writer(f)
-            writer.writerows(data)
+            writer = csv.writer(f, delimiter="\t")
+            writer.writerows(data[1:])
 
     def output(self):
-        return luigi.LocalTarget()
+        return luigi.LocalTarget(self.task_id + ".tsv")
 
 
 @requires(TransformTask)
 class UploadTask(postgres.CopyToTable):
     """Upload the data to a postgres instance."""
 
-    host = "localhost"
-    database = "my_cool_database"
-    user = "luigi"
-    password = "hushhush"
-    table = "my_cool_table"
-    columns = ("foo", "bar", "baz")
+    host = os.environ.get("POSTGRES_HOST", "localhost")
+    database = os.environ.get("POSTGRES_DATABASE", "postgres")
+    user = os.environ.get("POSTGRES_USER", "postgres")
+    password = os.environ.get("POSTGRES_PASSWORD", "password")
+    table = "people"
+    columns = (
+        ("id", "BIGINT"),
+        ("full_name", "TEXT"),
+        ("first_name", "TEXT"),
+        ("last_name", "TEXT"),
+        ("company_name", "TEXT"),
+        ("address", "TEXT"),
+        ("city", "TEXT"),
+        ("county", "TEXT"),
+        ("state", "TEXT"),
+        ("zip", "TEXT"),
+        ("phone1", "TEXT"),
+        ("phone2", "TEXT"),
+        ("email", "TEXT"),
+        ("web", "TEXT"),
+    )
 
