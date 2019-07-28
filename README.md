@@ -14,3 +14,7 @@ pip install -r requirements.txt
 # Run luigi!
 PYTHONPATH='.' luigi --module tasks UploadTask --fname "./data/sample.csv" --local-scheduler
 ```
+
+## Additional Reading
+
+- [Official Luigi Example](https://luigi.readthedocs.io/en/stable/example_top_artists.html)
