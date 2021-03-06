@@ -1,3 +1,5 @@
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/treyhakanson/2019-pyohio-luigi)
+
 # 2019 PyOhio Luigi Talk
 
 Code example to go along with my talk [Dynamic Data Pipelining with Luigi](https://www.youtube.com/watch?v=5kSnkNDeQjQ) at PyOhio 2019.
